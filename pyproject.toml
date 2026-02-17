@@ -3,7 +3,7 @@ name = "omega-memory"
 version = "0.10.0"
 description = "Persistent memory for AI coding agents — #1 on LongMemEval benchmark"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = "Apache-2.0"
 authors = [
     {name = "Kokyō Keishō Zaidan Stichting", email = "omega-memory@proton.me"},

@@ -44,3 +44,39 @@ Thumbs.db
 # Project-local agent instructions (contains internal references)
 CLAUDE.md
 docs/submissions/
+
+# === OMEGA fork additions ===
+# Security audit artifacts
+security-audit/
+*.audit.json
+
+# Local model cache (downloaded separately with hash verification)
+models/
+
+# OMEGA runtime data (never commit)
+.omega/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+hooks.log
+hook.sock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.whl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
