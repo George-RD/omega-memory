@@ -25,23 +25,23 @@ MODEL_FILES = {
         "url": f"{HF_REPO}/onnx/model.onnx",
         "expected_size_bytes": 133_000_000,
         "size_tolerance": 0.20,
-        "sha256": None,  # Pin after first verified download
+        "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",  # Pin after first verified download
     },
     "tokenizer.json": {
         "url": f"{HF_REPO}/tokenizer.json",
         "expected_size_bytes": 711_000,
         "size_tolerance": 0.20,
-        "sha256": None,
+        "sha256": "094f8e891b932f2000c92cfc663bac4c62069f5d8af5b5278c4306aef3084750",
     },
     "config.json": {
         "url": f"{HF_REPO}/config.json",
         "expected_size_bytes": 800,
         "size_tolerance": 0.50,
-        "sha256": None,
+        "sha256": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
     },
     "tokenizer_config.json": {
         "url": f"{HF_REPO}/tokenizer_config.json",
-        "expected_size_bytes": 1200,
+        "expected_size_bytes": 366,
         "size_tolerance": 0.50,
         "sha256": None,
     },
