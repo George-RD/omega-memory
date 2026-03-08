@@ -7,6 +7,137 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-03-04
+
+### Added
+- **Hooks in wheel**: Claude Code hooks now ship inside the pip package; previously
+  pip-installed users got broken hook errors because fast_hook.py was excluded
+- **`omega hooks` CLI**: New subcommand with three modes:
+  - `omega hooks setup` — auto-configures ~/.claude/settings.json with correct paths
+  - `omega hooks path` — prints the hooks directory (machine-readable)
+  - `omega hooks doctor` — diagnoses broken paths in hook config
+- Shared `_resolve_hooks_src()` helper for consistent hook path resolution
+
+### Changed
+- `omega setup` now uses `_resolve_hooks_src()` instead of inline path logic
+
+### Fixed
+- Hooks excluded from wheel due to missing `__init__.py` in `src/omega/hooks/`
+
+## [0.11.1] - 2026-03-03
+
+### Fixed
+
+- Fixed browse and flagged-memory queries returning integer row IDs instead of string node IDs, causing TypeError crashes when formatting results.
+- Fixed 7 CLI commands crashing with ImportError on community edition when pro-only modules (`omega.knowledge`, `omega.cloud`, `omega.license`, `omega.server.http_server`) are not installed.
+
+### Added
+
+- 91 new tests covering bridge helper functions (`_extract_facts`, `_auto_relate`, `_detect_and_supersede`, `_split_atomic_facts`) and handler actions (`omega_reflect`, `omega_memory`, `omega_stats`, `omega_browse`).
+- Updated integration test assertions to match current tool and handler counts.
+
+## [0.11.0] - 2026-03-03
+
+### Added
+
+- **New tool: `omega_reflect`** -- Self-evaluation tool that reviews recent memories and surfaces patterns, contradictions, and gaps in your knowledge graph.
+- **New tool: `omega_consult_gpt`** -- Multi-LLM consultation: ask GPT-4 for a second opinion on a question, with OMEGA context automatically included.
+- **New tool: `omega_consult_claude`** -- Multi-LLM consultation: ask Claude for a second opinion, with OMEGA context automatically included.
+- **Auto-relate with typed edges** -- Memories are now linked with typed relationship edges (`related`, `supersedes`, `contradicts`, `refines`, `supports`) during ingestion, improving graph traversal and retrieval accuracy.
+- **Contradiction supersession** -- When a new decision contradicts an existing one, the older memory is automatically superseded with a `contradicts` edge.
+- **Atomic fact splitting** -- Compound memories are automatically decomposed into individual fact nodes, improving retrieval precision for targeted queries.
+- **Query expansion** -- Queries are automatically expanded with related terms for better recall on ambiguous or short searches.
+- **Temporal queries** -- `omega_query` now supports time-scoped retrieval via `valid_at` parameter.
+- **Browse mode for `omega_query`** -- New `mode="browse"` option for open-ended exploration of your memory graph by type, session, or recency.
+- **Enhanced `omega_memory` actions** -- New actions: `link` (create typed edges between memories), `flagged` (list memories flagged for review), `supersede` (manually supersede a memory).
+- **Enhanced `omega_stats` actions** -- New actions: `forgetting_log`, `dedup`, `milestones`, `habits` (usage pattern analysis).
+- **RSS watchdog** -- Background process monitor that detects runaway memory usage and gracefully exits before OOM.
+- **SQLite executor** -- Dedicated thread pool executor prevents GIL+GC race conditions under concurrent access (SIGSEGV fix).
+- **Rotating log files** -- Server logs now rotate automatically (5 MB cap, 3 rotations) to prevent disk fill.
+- **Community-edition protocol** -- `omega_protocol` tool now returns useful operating guidelines for community users.
+
+### Changed
+
+- **Extended TTL system** -- Long-term memories now persist for 90 days (was 2 weeks). Decisions and advisor insights are permanent (never expire). Session summaries upgraded from ephemeral to long-term.
+- **Improved dedup thresholds** -- Added type-specific dedup thresholds for constraints (0.90), advisor insights (0.75), user facts (0.80), and skill templates (0.85).
+- **Consolidate default** -- `omega_consolidate` now defaults to 14-day prune window (was 30 days).
+
+### Fixed
+
+- Cross-session dedup now correctly handles decisions and insights restated across sessions.
+- Blocklist no longer incorrectly filters `user_preference` and `user_fact` memories.
+- Evolution threshold reduced to 1 new word (was 3), allowing incremental knowledge updates.
+- `find_similar()` filters expired and superseded memories with 2x over-fetch.
+- All `logger.error()` calls now include `exc_info=True` for better tracebacks.
+- Socket watchdog validates socket responsiveness instead of just checking existence.
+
+## [0.10.8] - 2026-02-24
+
+### Fixed
+
+- Test fixture: `CoordinationManager` in conftest.py now passes `cloud_sync=False` to prevent cloud sync attempts during tests.
+- `__init__.py` version string now matches `pyproject.toml` (was stuck at 0.10.6).
+
+## [0.10.7] - 2026-02-24
+
+### Added
+
+- MCP server now sends instructions during initialization telling Claude to call `omega_welcome()` and use memory tools proactively. Removes need for manual project instruction configuration in Claude Desktop.
+- Synced core files from private repo: `hooks-core.json`, `task_utils.py`, `test_improvements.py`, `test_sqlite_store.py`.
+- Pro-only test guards (`_skip_pro`) added to `test_sqlite_store.py` for features that depend on pro-only infrastructure.
+
+## [0.10.6] - 2026-02-20
+
+### Added
+
+- WAL checkpoint management: TRUNCATE on init, PASSIVE on close, and periodic PASSIVE checkpoint every N writes (configurable via `OMEGA_WAL_CHECKPOINT_INTERVAL` env var). Prevents unbounded WAL growth under multi-process contention.
+- Auto-backup on startup: creates a JSON backup when the most recent is >24h old, keeps max 5 rotated in `~/.omega/backups/`.
+- `_run_sql()` retry wrapper for individual SQL statements under lock contention.
+- Thread-safe query cache with `_cache_lock` protecting all reads/writes.
+- Smart partial cache invalidation: only evicts cache entries with trigram overlap >= 0.20 with new content, instead of full wipe.
+
+### Fixed
+
+- `find_similar()` now filters expired and superseded memories, with 2x over-fetch to maintain result count.
+
+## [0.10.5] - 2026-02-20
+
+### Added
+
+- Windows/WSL installation guide in README with step-by-step setup and 5 WSL-specific gotchas.
+- `src/omega/db_utils.py` shared SQLite retry helpers (`retry_on_locked`, `retry_write_on_locked`) for database-locked error recovery.
+
+### Fixed
+
+- SQLite connections in CLI commands now use `timeout=30` to prevent WAL lock hangs under multi-process contention. Doctor health checks use `timeout=5`.
+- `SESSION_START` surfacing thresholds broadened (0.60/0.45/0.15 to 0.45/0.40/0.10) for better context at session startup.
+- Three noise filters added to auto-capture: infrastructure events, zero-token outcomes, and JSON blob decisions.
+- Cross-session dedup exception for decisions (same decision restated across sessions now correctly deduplicates).
+- Shortened capture output messages ("Deduped", "Evolved") for cleaner hook output.
+- Lowered dedup thresholds: session summaries 0.95 to 0.75, decisions 0.85 to 0.80.
+- `exc_info=True` added to all `logger.error()` calls in bridge.py.
+
+## [0.10.4] - 2026-02-20
+
+### Added
+
+- Full `--json` test coverage for `query`, `status`, `timeline`, `stats`, and `activity` CLI commands (closes #9).
+
+### Changed
+
+- Session summary TTL changed from SHORT_TERM to EPHEMERAL (1h) to prevent accumulation.
+- Generic `memory` type TTL changed from LONG_TERM to SHORT_TERM (1d) for faster expiry.
+- `consolidate` prune_days default lowered from 30 to 14 days.
+- Added `exc_info=True` to all 30 `logger.error()` calls in handlers for better tracebacks.
+- Eliminated all `datetime.utcnow()` deprecation warnings (Python 3.12+).
+
+## [0.10.3] - 2026-02-20
+
+### Changed
+
+- Removed noisy stderr warning when ONNX model is not downloaded (logger.warning still fires for debugging).
+- Version alignment: `__init__.py` and `pyproject.toml` now both report 0.10.3.
+
 ## [0.10.0] - 2026-02-16
 
 ### Changed
@@ -149,7 +280,10 @@ OMEGA — persistent memory for AI coding agents. First public release under Apa
 - `omega query/store/remember` — CLI access to memory
 - Plugin architecture via entry points for extensibility
 
-[Unreleased]: https://github.com/omega-memory/omega-memory/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/omega-memory/omega-memory/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/omega-memory/omega-memory/compare/v0.11.0...v0.11.1
+[0.11.0]: https://github.com/omega-memory/omega-memory/compare/v0.10.8...v0.11.0
+[0.10.8]: https://github.com/omega-memory/omega-memory/compare/v0.10.7...v0.10.8
 [0.10.0]: https://github.com/omega-memory/omega-memory/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/omega-memory/omega-memory/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/omega-memory/omega-memory/compare/v0.7.3...v0.8.0

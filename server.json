@@ -1,21 +1,21 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.omega-memory/omega-memory",
-  "description": "Persistent memory for AI coding agents. #1 on LongMemEval. Local-first.",
+  "title": "Omega Memory",
+  "description": "Persistent memory for AI coding agents. Semantic search, contradiction detection, memory decay.",
   "repository": {
     "url": "https://github.com/omega-memory/omega-memory",
     "source": "github"
   },
-  "version": "0.10.1",
+  "version": "0.10.9",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "omega-memory",
-      "version": "0.10.1",
+      "version": "0.10.9",
       "transport": {
         "type": "stdio"
-      },
-      "environmentVariables": []
+      }
     }
   ]
 }

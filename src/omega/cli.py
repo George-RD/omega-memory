@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import logging
+import os
 import re
 import shutil
 import subprocess
@@ -9,6 +11,14 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+logger = logging.getLogger("omega.cli")
+
+
+def _use_json(args) -> bool:
+    """Check if JSON output requested via --json flag or OMEGA_JSON=1 env var."""
+    return getattr(args, "json", False) or os.environ.get("OMEGA_JSON") == "1"
+
 
 OMEGA_DIR = Path.home() / ".omega"
 OMEGA_CACHE = Path.home() / ".cache" / "omega"
@@ -96,8 +106,8 @@ def _has_extended_modules() -> bool:
         for plugin in discover_plugins():
             if plugin.HOOKS_JSON:
                 return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Plugin discovery failed: %s", e)
     return False
 
 
@@ -132,6 +142,7 @@ def _inject_settings_hooks(hooks_src: Path):
 
     configured = 0
     skipped = 0
+    repaired = 0
 
     for event, hook_defs in manifest.items():
         # Normalize: old format is a single dict, new format is a list of dicts
@@ -146,20 +157,29 @@ def _inject_settings_hooks(hooks_src: Path):
             # Strip .py and use the full script string for matching
             script_key = script.replace(".py", "").replace(" ", "_")
 
-            # Check if this OMEGA hook is already wired
-            already_wired = False
+            # Check if this OMEGA hook is already wired (match by script_key in command)
+            existing_idx = None
+            existing_hook_idx = None
             if event in settings["hooks"]:
-                for entry in settings["hooks"][event]:
-                    for h in entry.get("hooks", []):
+                for i, entry in enumerate(settings["hooks"][event]):
+                    for j, h in enumerate(entry.get("hooks", [])):
                         cmd = h.get("command", "")
-                        if "omega" in cmd and script_key in cmd.replace(".py", "").replace(" ", "_"):
-                            already_wired = True
+                        if script_key in cmd.replace(".py", "").replace(" ", "_"):
+                            existing_idx = i
+                            existing_hook_idx = j
                             break
-                    if already_wired:
+                    if existing_idx is not None:
                         break
 
-            if already_wired:
-                skipped += 1
+            if existing_idx is not None:
+                # Hook exists — check if the path is correct
+                existing_cmd = settings["hooks"][event][existing_idx]["hooks"][existing_hook_idx]["command"]
+                if existing_cmd == command:
+                    skipped += 1
+                    continue
+                # Path changed (broken or outdated) — replace it
+                settings["hooks"][event][existing_idx]["hooks"][existing_hook_idx]["command"] = command
+                repaired += 1
                 continue
 
             # Build the hook entry
@@ -183,9 +203,11 @@ def _inject_settings_hooks(hooks_src: Path):
 
     if configured > 0:
         print(f"  settings.json: {configured} hook(s) configured")
+    if repaired > 0:
+        print(f"  settings.json: {repaired} hook(s) repaired (paths updated)")
     if skipped > 0:
         print(f"  settings.json: {skipped} hook(s) already configured")
-    if configured == 0 and skipped == 0:
+    if configured == 0 and skipped == 0 and repaired == 0:
         print("  settings.json: hooks configured")
 
 
@@ -394,7 +416,7 @@ def cmd_query(args):
                 print(f'No results for "{query_text}" ({elapsed:.2f}s)')
 
             # Warn if semantic search is degraded
-            from omega.graphs import get_active_backend
+            from omega.embedding import get_active_backend
             if get_active_backend() is None:
                 print(
                     "\n  NOTE: Semantic search unavailable — results use text matching only.",
@@ -428,8 +450,11 @@ def cmd_store(args):
 
     from omega.bridge import store
 
-    store(content=content, event_type=event_type)
-    print(f"Stored [{cli_type}]: {content[:80]}")
+    result = store(content=content, event_type=event_type)
+    if _use_json(args):
+        print(json.dumps({"stored": True, "type": cli_type, "content": content[:200]}))
+    else:
+        print(f"Stored [{cli_type}]: {content[:80]}")
 
 
 def cmd_remember(args):
@@ -442,7 +467,10 @@ def cmd_remember(args):
     from omega.bridge import remember
 
     remember(text=text)
-    print(f"Remembered: {text[:120]}")
+    if _use_json(args):
+        print(json.dumps({"remembered": True, "text": text[:200]}))
+    else:
+        print(f"Remembered: {text[:120]}")
 
 
 def cmd_timeline(args):
@@ -553,7 +581,8 @@ def _setup_claude_code(errors_ref: list, hooks_src: Path, hooks_only: bool = Fal
         dst = hooks_dst / f"omega-{hook}"
         if src.exists():
             shutil.copy2(src, dst)
-            dst.chmod(0o755)
+            if sys.platform != "win32":
+                dst.chmod(0o755)
             print(f"  Installed hook: {dst.name}")
         else:
             print(f"  WARNING: Hook source not found: {src}")
@@ -570,6 +599,110 @@ def _setup_claude_code(errors_ref: list, hooks_src: Path, hooks_only: bool = Fal
         _inject_claude_md()
     except Exception as e:
         print(f"  WARNING: Failed to update CLAUDE.md: {e}")
+
+
+def _resolve_hooks_src() -> Path:
+    """Resolve the hooks source directory.
+
+    Priority:
+    1. src/omega/hooks/ inside the installed package (pip install)
+    2. hooks/ at repo root (development checkout)
+    """
+    pkg_hooks = Path(__file__).parent / "hooks"
+    if pkg_hooks.exists() and (pkg_hooks / "fast_hook.py").exists():
+        return pkg_hooks
+    repo_hooks = Path(__file__).parent.parent.parent / "hooks"
+    if repo_hooks.exists() and (repo_hooks / "fast_hook.py").exists():
+        return repo_hooks
+    return pkg_hooks  # will fail gracefully downstream
+
+
+def cmd_hooks(args):
+    """Manage Claude Code hooks: setup, path, doctor."""
+    sub = getattr(args, "hooks_command", None)
+
+    hooks_src = _resolve_hooks_src()
+    python_path = _resolve_python_path()
+
+    if sub == "setup":
+        print("OMEGA hooks setup")
+        print(f"  Python:  {python_path}")
+        print(f"  Hooks:   {hooks_src}")
+
+        if not (hooks_src / "fast_hook.py").exists():
+            print("\n  ERROR: fast_hook.py not found at expected location.")
+            print("  Try reinstalling: pip install omega-memory[server]")
+            sys.exit(1)
+
+        try:
+            _inject_settings_hooks(hooks_src)
+            print("\n  Hooks configured in ~/.claude/settings.json")
+        except Exception as e:
+            print(f"\n  ERROR: Failed to configure hooks: {e}")
+            sys.exit(1)
+
+        try:
+            _inject_claude_md()
+        except Exception as e:
+            print(f"  WARNING: Failed to update CLAUDE.md: {e}")
+
+        print("\n  Done! Restart Claude Code for changes to take effect.")
+
+    elif sub == "path":
+        print(hooks_src)
+
+    elif sub == "doctor":
+        print("OMEGA hooks doctor")
+        print(f"  Python:     {python_path}")
+        print(f"  Hooks dir:  {hooks_src}")
+
+        fh = hooks_src / "fast_hook.py"
+        if fh.exists():
+            print(f"  fast_hook:  OK ({fh})")
+        else:
+            print(f"  fast_hook:  MISSING ({fh})")
+
+        if SETTINGS_JSON_PATH.exists():
+            try:
+                settings = json.loads(SETTINGS_JSON_PATH.read_text())
+                hooks = settings.get("hooks", {})
+                events_with_omega = 0
+                broken_paths = []
+                for event, entries in hooks.items():
+                    for entry in entries:
+                        for h in entry.get("hooks", []):
+                            cmd = h.get("command", "")
+                            if "omega" in cmd.lower() or "fast_hook" in cmd:
+                                events_with_omega += 1
+                                parts = cmd.split()
+                                if len(parts) >= 2:
+                                    py_path = parts[0]
+                                    script_path = parts[1]
+                                    if not Path(py_path).exists():
+                                        broken_paths.append(f"{event}: Python not found: {py_path}")
+                                    if not Path(script_path).exists():
+                                        broken_paths.append(f"{event}: Script not found: {script_path}")
+
+                print(f"  settings:   {events_with_omega} OMEGA hook events configured")
+                if broken_paths:
+                    print(f"  BROKEN:     {len(broken_paths)} path issue(s)")
+                    for bp in broken_paths:
+                        print(f"    - {bp}")
+                    print("\n  Fix with: omega hooks setup")
+                else:
+                    print("  paths:      All OK")
+            except json.JSONDecodeError:
+                print("  settings:   MALFORMED (~/.claude/settings.json)")
+        else:
+            print("  settings:   NOT FOUND (~/.claude/settings.json)")
+            print("\n  Fix with: omega hooks setup")
+
+    else:
+        print("Usage: omega hooks {setup|path|doctor}")
+        print()
+        print("  setup   Configure hooks in ~/.claude/settings.json")
+        print("  path    Print the hooks directory path")
+        print("  doctor  Check hook configuration health")
 
 
 def _mcp_server_config() -> dict:
@@ -780,7 +913,7 @@ def cmd_setup(args):
     steps_done.append("Config file")
 
     # 5. Client-specific setup
-    hooks_src = Path(__file__).parent.parent.parent / "hooks"
+    hooks_src = _resolve_hooks_src()
     if client == "claude-code":
         _setup_claude_code(errors, hooks_src, hooks_only=hooks_only)
         if hooks_only:
@@ -852,7 +985,7 @@ def _collect_status_data() -> dict:
         data["database"] = str(db_path)
         data["db_size_mb"] = round(size_mb, 2)
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(str(db_path), timeout=30)
             data["memory_count"] = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
             try:
                 import sqlite_vec
@@ -924,7 +1057,7 @@ def cmd_status(args):
         kv.append(("Database", str(db_path)))
         kv.append(("Size", f"{size_mb:.2f} MB"))
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = sqlite3.connect(str(db_path), timeout=30)
             count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
             kv.append(("Memories", str(count)))
             # Check sqlite-vec availability
@@ -1103,7 +1236,7 @@ def cmd_backup(args):
     import sqlite3
     from omega.crypto import secure_connect
 
-    src = sqlite3.connect(str(db_path))
+    src = sqlite3.connect(str(db_path), timeout=30)
     dst = secure_connect(backup_path)
     src.backup(dst)
     dst.close()
@@ -1328,8 +1461,8 @@ def _send_notification(text: str, context: str = None):
             capture_output=True,
             timeout=5,
         )
-    except Exception:
-        pass  # Best-effort
+    except Exception as e:
+        logger.debug("Notification send failed: %s", e)
 
 
 def cmd_remind(args):
@@ -1437,7 +1570,7 @@ def cmd_validate(args):
 
     import sqlite3
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     errors = 0
 
     print_header("OMEGA Validate")
@@ -1490,8 +1623,8 @@ def cmd_validate(args):
         try:
             count = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
             table_rows.append((tbl, str(count)))
-        except Exception:
-            pass  # Table may not exist
+        except Exception as e:
+            logger.debug("Table count failed for %s: %s", tbl, e)
     print_table(None, ["Table", "Count"], table_rows)
 
     conn.close()
@@ -1606,7 +1739,7 @@ def cmd_doctor(args):
         fixes_needed.append(("Download tokenizer", "omega setup"))
 
     try:
-        from omega.graphs import generate_embedding, get_embedding_info
+        from omega.embedding import generate_embedding, get_embedding_info
 
         info = get_embedding_info()
         if info.get("onnx_available"):
@@ -1677,7 +1810,7 @@ def cmd_doctor(args):
         try:
             import sqlite3 as _sqlite3
 
-            _conn = _sqlite3.connect(str(db_path))
+            _conn = _sqlite3.connect(str(db_path), timeout=5)
             fts_count = _conn.execute("SELECT COUNT(*) FROM memories_fts").fetchone()[0]
             mem_count = _conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
             if fts_count > 0:
@@ -1703,7 +1836,7 @@ def cmd_doctor(args):
         try:
             import sqlite3 as _sqlite3
 
-            _conn = _sqlite3.connect(str(db_path))
+            _conn = _sqlite3.connect(str(db_path), timeout=5)
             try:
                 import sqlite_vec
 
@@ -1731,7 +1864,7 @@ def cmd_doctor(args):
         try:
             import sqlite3 as _sqlite3
 
-            _conn = _sqlite3.connect(str(db_path))
+            _conn = _sqlite3.connect(str(db_path), timeout=5)
             coord_tables = [
                 "coord_sessions",
                 "coord_file_claims",
@@ -1776,7 +1909,7 @@ def cmd_doctor(args):
         try:
             import sqlite3 as _sqlite3
 
-            _conn = _sqlite3.connect(str(db_path))
+            _conn = _sqlite3.connect(str(db_path), timeout=5)
             # Feedback stats
             rows = _conn.execute("SELECT metadata FROM memories WHERE metadata LIKE '%feedback_score%'").fetchall()
             if rows:
@@ -1934,7 +2067,12 @@ def cmd_knowledge(args):
         print(result)
 
     elif subcmd == "sync-kb":
-        from omega.knowledge.cloud_sync import sync_kb_queue
+        try:
+            from omega.knowledge.cloud_sync import sync_kb_queue
+        except ImportError:
+            print("Knowledge base sync requires additional modules.")
+            print("Learn more: https://omegamax.co")
+            return
         result = sync_kb_queue(batch_size=args.batch_size)
         print(result)
 
@@ -1967,7 +2105,12 @@ def cmd_cloud(args):
             print("Usage: omega cloud setup --url <SUPABASE_URL> --key <ANON_KEY>")
             print("\nGet these from: Supabase Dashboard → Settings → API")
             return
-        from omega.cloud.setup import setup_supabase
+        try:
+            from omega.cloud.setup import setup_supabase
+        except ImportError:
+            print("Cloud setup requires additional modules.")
+            print("Learn more: https://omegamax.co")
+            return
 
         result = setup_supabase(url, key, service_key)
         print(result)
@@ -1991,12 +2134,22 @@ def cmd_cloud(args):
             print(f"Cloud not configured: {e}")
 
     elif subcmd == "schema":
-        from omega.cloud.setup import get_schema_sql
+        try:
+            from omega.cloud.setup import get_schema_sql
+        except ImportError:
+            print("Cloud schema requires additional modules.")
+            print("Learn more: https://omegamax.co")
+            return
 
         print(get_schema_sql())
 
     elif subcmd == "verify":
-        from omega.cloud.setup import verify_connection
+        try:
+            from omega.cloud.setup import verify_connection
+        except ImportError:
+            print("Cloud verify requires additional modules.")
+            print("Learn more: https://omegamax.co")
+            return
 
         print(verify_connection())
 
@@ -2074,7 +2227,12 @@ def cmd_mobile(args):
 
     elif subcmd == "serve":
         import asyncio
-        from omega.server.http_server import run_http, get_or_create_api_key
+        try:
+            from omega.server.http_server import run_http, get_or_create_api_key
+        except ImportError:
+            print("Mobile serve requires additional modules.")
+            print("Learn more: https://omegamax.co")
+            return
 
         port = args.port
         host = args.host
@@ -2094,6 +2252,59 @@ def cmd_mobile(args):
         print("\nMobile access via mcp-proxy + Tailscale.")
 
 
+def cmd_activate(args):
+    """Activate a Pro license key."""
+    try:
+        from omega.license import activate
+    except ImportError:
+        print("License activation requires OMEGA Pro modules.")
+        print("Learn more: https://omegamax.co")
+        sys.exit(1)
+    key = args.key.strip()
+
+    if not key.startswith("OMEGA-PRO-"):
+        print("Invalid key format. Keys start with OMEGA-PRO-")
+        sys.exit(1)
+
+    print("Activating license key...")
+    if activate(key):
+        print("License activated successfully! Pro modules will load on next MCP server start.")
+        print("\nRestart Claude Code or your MCP client to load Pro tools.")
+    else:
+        print("Activation failed. Please check your key and try again.")
+        print("If the problem persists, contact omega-memory@proton.me")
+        sys.exit(1)
+
+
+def cmd_license(args):
+    """Show current license status."""
+    try:
+        from omega.license import license_status, deactivate
+    except ImportError:
+        print("OMEGA Community Edition — no license required.")
+        print("Upgrade to Pro: https://omegamax.co")
+        return
+
+    if getattr(args, "deactivate", False):
+        deactivate()
+        print("License removed.")
+        return
+
+    status = license_status()
+    if status["active"]:
+        print("Status:      Active")
+        print(f"Key:         {status['key']}")
+        print(f"Valid until:  {status['valid_until']}")
+    else:
+        if status["key"]:
+            print("Status:      Expired")
+            print(f"Key:         {status['key']}")
+            print("\nRun 'omega activate <key>' to reactivate, or resubscribe at https://omegamax.co/pro")
+        else:
+            print("Status:      No license")
+            print("\nUpgrade at https://omegamax.co/pro")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="omega",
@@ -2106,7 +2317,7 @@ def main():
     query_parser.add_argument("query_text", nargs="+", help="Search text")
     query_parser.add_argument("--exact", action="store_true", help="Use FTS5 exact phrase search instead of semantic")
     query_parser.add_argument("--limit", type=int, default=10, help="Max results (default: 10)")
-    query_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    query_parser.add_argument("--json", action="store_true", help="Output as JSON (also: OMEGA_JSON=1)")
 
     store_parser = subparsers.add_parser("store", help="Store a memory with a specified type")
     store_parser.add_argument("content", nargs="+", help="Memory content")
@@ -2117,13 +2328,15 @@ def main():
         choices=["memory", "lesson", "decision", "error", "task", "preference"],
         help="Memory type (default: memory)",
     )
+    store_parser.add_argument("--json", action="store_true", help="Output as JSON (also: OMEGA_JSON=1)")
 
     remember_parser = subparsers.add_parser("remember", help="Store a permanent user preference")
     remember_parser.add_argument("text", nargs="+", help="Preference text")
+    remember_parser.add_argument("--json", action="store_true", help="Output as JSON (also: OMEGA_JSON=1)")
 
     timeline_parser = subparsers.add_parser("timeline", help="Show memory timeline grouped by day")
     timeline_parser.add_argument("--days", type=int, default=7, help="Number of days to show (default: 7)")
-    timeline_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    timeline_parser.add_argument("--json", action="store_true", help="Output as JSON (also: OMEGA_JSON=1)")
 
     # --- Admin commands ---
     setup_parser = subparsers.add_parser("setup", help="Set up OMEGA: download model, initialize DB")
@@ -2149,7 +2362,7 @@ def main():
     )
 
     status_parser = subparsers.add_parser("status", help="Show memory count, store size, model status")
-    status_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    status_parser.add_argument("--json", action="store_true", help="Output as JSON (also: OMEGA_JSON=1)")
 
     doctor_parser = subparsers.add_parser("doctor", help="Verify installation: import, model, database")
     doctor_parser.add_argument("--client", choices=["claude-code"], help="Include client-specific checks (MCP, hooks)")
@@ -2186,10 +2399,10 @@ def main():
         "--dry-run", action="store_true", help="Show what would be compacted without changing data"
     )
     stats_parser = subparsers.add_parser("stats", help="Show memory type distribution and health summary")
-    stats_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    stats_parser.add_argument("--json", action="store_true", help="Output as JSON (also: OMEGA_JSON=1)")
     activity_parser = subparsers.add_parser("activity", help="Show recent session activity overview")
     activity_parser.add_argument("--days", type=int, default=7, help="Number of days to show (default: 7)")
-    activity_parser.add_argument("--json", action="store_true", help="Output as JSON")
+    activity_parser.add_argument("--json", action="store_true", help="Output as JSON (also: OMEGA_JSON=1)")
     logs_parser = subparsers.add_parser("logs", help="Show recent hook errors from hooks.log")
     logs_parser.add_argument("-n", "--lines", type=int, default=50, help="Number of lines to show (default: 50)")
     validate_parser = subparsers.add_parser("validate", help="Validate omega.db integrity (SQLite + FTS5)")
@@ -2199,6 +2412,13 @@ def main():
     serve_parser.add_argument("--port", type=int, default=8787, help="HTTP port (default: 8787)")
     serve_parser.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
     serve_parser.add_argument("--no-auth", action="store_true", help="Disable API key authentication")
+
+    # --- Hooks commands ---
+    hooks_parser = subparsers.add_parser("hooks", help="Manage Claude Code hooks")
+    hooks_sub = hooks_parser.add_subparsers(dest="hooks_command", help="Hook subcommands")
+    hooks_sub.add_parser("setup", help="Configure hooks in ~/.claude/settings.json")
+    hooks_sub.add_parser("path", help="Print the hooks directory path")
+    hooks_sub.add_parser("doctor", help="Check hook configuration health")
 
     # --- Reminder commands (experimental) ---
     remind_parser = subparsers.add_parser("remind", help="Manage time-based reminders (experimental)")
@@ -2257,6 +2477,13 @@ def main():
     mobile_serve_parser.add_argument("--port", type=int, default=8089, help="HTTP port (default: 8089)")
     mobile_serve_parser.add_argument("--host", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
 
+    # --- License commands ---
+    activate_parser = subparsers.add_parser("activate", help="Activate a Pro license key")
+    activate_parser.add_argument("key", help="License key (OMEGA-PRO-...)")
+
+    license_parser = subparsers.add_parser("license", help="Show Pro license status")
+    license_parser.add_argument("--deactivate", action="store_true", help="Remove local license")
+
     args = parser.parse_args()
 
     commands = {
@@ -2279,11 +2506,14 @@ def main():
         "logs": cmd_logs,
         "validate": cmd_validate,
         "serve": cmd_serve,
+        "hooks": cmd_hooks,
         "remind": cmd_remind,
         "knowledge": cmd_knowledge,
         "kb": cmd_knowledge,
         "cloud": cmd_cloud,
         "mobile": cmd_mobile,
+        "activate": cmd_activate,
+        "license": cmd_license,
     }
 
     # Wire plugin CLI commands (omega-pro, etc.)

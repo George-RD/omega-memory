@@ -26,11 +26,11 @@ class TestPackageImport:
 
     def test_import_handlers(self):
         from omega.server.handlers import HANDLERS
-        assert len(HANDLERS) >= 20
+        assert len(HANDLERS) >= 36  # 14 primary + 22 backward-compat aliases
 
     def test_import_tool_schemas(self):
         from omega.server.tool_schemas import TOOL_SCHEMAS
-        assert len(TOOL_SCHEMAS) >= 10  # 12 consolidated tools
+        assert len(TOOL_SCHEMAS) >= 14  # 14 consolidated tools
 
     def test_import_types(self):
         from omega.types import AutoCaptureEventType, TTLCategory
@@ -41,7 +41,7 @@ class TestPackageImport:
 @contextmanager
 def _skip_embeddings():
     """Context manager that skips embeddings and resets the circuit breaker after."""
-    from omega.graphs import reset_embedding_state
+    from omega.embedding import reset_embedding_state
     os.environ["OMEGA_SKIP_EMBEDDINGS"] = "1"
     try:
         yield
@@ -117,7 +117,7 @@ class TestBridge:
                 event_type="lesson_learned",
                 session_id="test-session",
             )
-            assert "Memory Captured" in result or "Memory Deduplicated" in result
+            assert "Memory Captured" in result or "Deduped" in result
 
             query_result = query(query_text="type hints Python", limit=5)
             assert "type hints" in query_result

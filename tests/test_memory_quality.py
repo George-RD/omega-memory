@@ -77,7 +77,7 @@ class TestContentBlocklist:
             event_type="decision",
         )
         assert "Blocked" not in result
-        assert "Captured" in result or "Evolved" in result or "Deduplicated" in result
+        assert "Captured" in result or "Evolved" in result or "Deduped" in result
 
 
 class TestMinLengthGate:
@@ -148,7 +148,7 @@ class TestDedupThresholds:
             content="Decided to use PostgreSQL with connection pooling via pgbouncer for the database layer in the staging environment for improved performance and reliability",
             event_type="decision",
         )
-        assert "Deduplicated" in r2
+        assert "Deduped" in r2
 
     def test_different_decisions_not_deduped(self, bridge_env):
         from omega.bridge import auto_capture
@@ -196,7 +196,7 @@ class TestErrorBurstDetection:
             session_id=sid,
         )
         # Either deduped or burst-blocked
-        assert "Deduplicated" in result or "Blocked" in result
+        assert "Deduped" in result or "Blocked" in result
 
 
 class TestConfidenceMetadata:
@@ -261,9 +261,9 @@ class TestSessionSummaryInfrastructure:
         ]
         assert len(summary_results) == 0
 
-    def test_session_summary_ttl_short_term(self):
+    def test_session_summary_ttl_long_term(self):
         from omega.types import TTLCategory, AutoCaptureEventType, EVENT_TYPE_TTL
-        assert EVENT_TYPE_TTL[AutoCaptureEventType.SESSION_SUMMARY] == TTLCategory.SHORT_TERM
+        assert EVENT_TYPE_TTL[AutoCaptureEventType.SESSION_SUMMARY] == TTLCategory.LONG_TERM
 
 
 class TestBlocklistScoping:

@@ -263,7 +263,7 @@ def _migrate_into_store(
     if items_needing_embedding:
         print(f"  Generating embeddings for {len(items_needing_embedding)} nodes...")
         try:
-            from omega.graphs import generate_embedding
+            from omega.embedding import generate_embedding
 
             done = 0
             for idx in items_needing_embedding:
@@ -452,7 +452,7 @@ def auto_migrate_if_needed() -> bool:
             return True
         return False
     except Exception as e:
-        logger.error(f"Auto-migration failed: {e}")
+        logger.error(f"Auto-migration failed: {e}", exc_info=True)
         print(f"OMEGA: Auto-migration failed: {e}")
         print("  Run 'omega migrate-db --force' to retry manually.")
         return False
