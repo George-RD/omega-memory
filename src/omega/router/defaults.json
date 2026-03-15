@@ -1,0 +1,336 @@
+{
+  "$schema": "omega_router_config_v1",
+  "version": "2026-02-11",
+  "models": {
+    "claude-opus-4-6": {
+      "provider": "anthropic",
+      "capabilities": ["coding", "analysis", "reasoning", "creative", "tool_use"],
+      "context_format": "anthropic_messages",
+      "context_window": 200000,
+      "max_output_tokens": 32768,
+      "cost_per_1m_input": 5.0,
+      "cost_per_1m_output": 25.0
+    },
+    "claude-sonnet-4-5-20250929": {
+      "provider": "anthropic",
+      "capabilities": ["coding", "analysis", "reasoning", "tool_use"],
+      "context_format": "anthropic_messages",
+      "context_window": 200000,
+      "max_output_tokens": 16384,
+      "cost_per_1m_input": 3.0,
+      "cost_per_1m_output": 15.0
+    },
+    "claude-haiku-4-5-20251001": {
+      "provider": "anthropic",
+      "capabilities": ["coding", "simple_edit", "exploration"],
+      "context_format": "anthropic_messages",
+      "context_window": 200000,
+      "max_output_tokens": 8192,
+      "cost_per_1m_input": 1.0,
+      "cost_per_1m_output": 5.0
+    },
+    "gpt-4o": {
+      "provider": "openai",
+      "capabilities": ["coding", "analysis", "reasoning", "creative", "tool_use"],
+      "context_format": "openai_chat",
+      "context_window": 128000,
+      "max_output_tokens": 16384,
+      "cost_per_1m_input": 2.5,
+      "cost_per_1m_output": 10.0
+    },
+    "gpt-5.2": {
+      "provider": "openai",
+      "capabilities": ["coding", "analysis", "reasoning", "creative", "tool_use"],
+      "context_format": "openai_chat",
+      "context_window": 400000,
+      "max_output_tokens": 32768,
+      "cost_per_1m_input": 1.75,
+      "cost_per_1m_output": 14.0
+    },
+    "gemini-3-pro-preview": {
+      "provider": "google",
+      "capabilities": ["coding", "analysis", "reasoning", "creative"],
+      "context_format": "gemini",
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "cost_per_1m_input": 2.0,
+      "cost_per_1m_output": 12.0
+    },
+    "gemini-3-flash-preview": {
+      "provider": "google",
+      "capabilities": ["coding", "exploration", "simple_edit"],
+      "context_format": "gemini",
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "cost_per_1m_input": 0.50,
+      "cost_per_1m_output": 3.0
+    },
+    "gemini-3-pro-image-preview": {
+      "provider": "google",
+      "capabilities": ["image"],
+      "context_format": "gemini",
+      "context_window": 1000000,
+      "max_output_tokens": 8192,
+      "cost_per_1m_input": 2.0,
+      "cost_per_1m_output": 8.0
+    },
+    "llama-3.3-70b-versatile": {
+      "provider": "groq",
+      "capabilities": ["coding", "analysis", "reasoning", "exploration"],
+      "context_format": "openai_chat",
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "cost_per_1m_input": 0.59,
+      "cost_per_1m_output": 0.79
+    },
+    "llama-3.1-8b-instant": {
+      "provider": "groq",
+      "capabilities": ["simple_edit", "exploration"],
+      "context_format": "openai_chat",
+      "context_window": 128000,
+      "max_output_tokens": 8192,
+      "cost_per_1m_input": 0.05,
+      "cost_per_1m_output": 0.08
+    },
+    "grok-4-latest": {
+      "provider": "xai",
+      "capabilities": ["coding", "analysis", "reasoning", "creative", "exploration"],
+      "context_format": "openai_chat",
+      "context_window": 256000,
+      "max_output_tokens": 16384,
+      "cost_per_1m_input": 3.0,
+      "cost_per_1m_output": 15.0
+    },
+    "grok-4.1-fast": {
+      "provider": "xai",
+      "capabilities": ["coding", "analysis", "exploration", "tool_use"],
+      "context_format": "openai_chat",
+      "context_window": 2000000,
+      "max_output_tokens": 30000,
+      "cost_per_1m_input": 0.20,
+      "cost_per_1m_output": 0.50
+    }
+  },
+  "intent_routing": {
+    "coding": {
+      "primary": {
+        "provider": "anthropic",
+        "model": "claude-opus-4-6",
+        "reason": "Strongest coding model — deep reasoning + tool use",
+        "context_window": 200000,
+        "cost_per_1m_input": 5.0,
+        "cost_per_1m_output": 25.0
+      },
+      "fallback": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-5-20250929",
+        "reason": "Best coding cost/quality ratio, same provider for seamless fallback"
+      }
+    },
+    "creative": {
+      "primary": {
+        "provider": "anthropic",
+        "model": "claude-opus-4-6",
+        "reason": "Best creative writing capability",
+        "context_window": 200000,
+        "cost_per_1m_input": 5.0,
+        "cost_per_1m_output": 25.0
+      },
+      "fallback": {
+        "provider": "openai",
+        "model": "gpt-5.2",
+        "reason": "GPT-5.2 strong creative + 400K context at $1.75/$14"
+      }
+    },
+    "logic": {
+      "primary": {
+        "provider": "anthropic",
+        "model": "claude-opus-4-6",
+        "reason": "Deep reasoning capability",
+        "context_window": 200000,
+        "cost_per_1m_input": 5.0,
+        "cost_per_1m_output": 25.0
+      },
+      "fallback": {
+        "provider": "google",
+        "model": "gemini-3-pro-preview",
+        "reason": "Gemini 3 Pro advanced reasoning, 1M context"
+      }
+    },
+    "exploration": {
+      "primary": {
+        "provider": "xai",
+        "model": "grok-4-latest",
+        "reason": "Real-time web access, strong research and AI trend awareness",
+        "context_window": 256000,
+        "cost_per_1m_input": 3.0,
+        "cost_per_1m_output": 15.0
+      },
+      "fallback": {
+        "provider": "xai",
+        "model": "grok-4.1-fast",
+        "reason": "2M context, budget-friendly exploration at $0.20/$0.50 per 1M tokens"
+      }
+    },
+    "simple_edit": {
+      "primary": {
+        "provider": "groq",
+        "model": "llama-3.1-8b-instant",
+        "reason": "Groq LPU inference — fastest and cheapest for trivial edits",
+        "context_window": 128000,
+        "cost_per_1m_input": 0.05,
+        "cost_per_1m_output": 0.08
+      },
+      "fallback": {
+        "provider": "google",
+        "model": "gemini-3-flash-preview",
+        "reason": "Gemini 3 Flash — 1M context fallback at $0.50/$3"
+      }
+    },
+    "image": {
+      "primary": {
+        "provider": "google",
+        "model": "gemini-3-pro-image-preview",
+        "reason": "Nano Banana Pro — best-in-class image generation with text rendering and 4K output",
+        "context_window": 1000000,
+        "cost_per_1m_input": 2.0,
+        "cost_per_1m_output": 8.0
+      },
+      "fallback": {
+        "provider": "google",
+        "model": "gemini-3-pro-preview",
+        "reason": "Gemini 3 Pro multimodal fallback"
+      }
+    }
+  },
+  "context_overrides": {
+    "large_context": {
+      "threshold_tokens": 100000,
+      "model": {
+        "provider": "google",
+        "model": "gemini-3-flash-preview",
+        "reason": "Gemini 3 Flash — 1M context window, fast inference at $0.50/$3",
+        "context_window": 1000000
+      }
+    }
+  },
+  "priority_modes": {
+    "cost": {
+      "prefer_models": [
+        "llama-3.1-8b-instant",
+        "grok-4.1-fast",
+        "gemini-3-flash-preview",
+        "claude-haiku-4-5-20251001",
+        "gemini-3-pro-preview"
+      ],
+      "description": "Minimize cost: Groq 8B ($0.05/M) → Grok 4.1 Fast ($0.20/M) → Gemini 3 Flash ($0.50/M) → Haiku ($1/M) → Gemini 3 Pro ($2/M)",
+      "strategy": "cheapest_first"
+    },
+    "speed": {
+      "prefer_models": [
+        "llama-3.1-8b-instant",
+        "grok-4.1-fast",
+        "gemini-3-flash-preview",
+        "llama-3.3-70b-versatile",
+        "claude-haiku-4-5-20251001"
+      ],
+      "description": "Minimize latency: Groq 8B → Grok 4.1 Fast → Gemini 3 Flash → Groq 70B → Haiku",
+      "strategy": "lowest_latency"
+    },
+    "quality": {
+      "prefer_models": [
+        "claude-opus-4-6",
+        "gpt-5.2",
+        "claude-sonnet-4-5-20250929",
+        "grok-4-latest"
+      ],
+      "description": "Maximize quality: Opus 4.6 → GPT-5.2 → Sonnet 4.5 → Grok 4",
+      "strategy": "highest_capability"
+    },
+    "balanced": {
+      "prefer_models": [
+        "claude-sonnet-4-5-20250929",
+        "gpt-5.2",
+        "grok-4-latest",
+        "gemini-3-pro-preview",
+        "claude-haiku-4-5-20251001"
+      ],
+      "description": "Balance cost and quality: Sonnet 4.5 → GPT-5.2 → Grok 4 → Gemini 3 Pro → Haiku",
+      "strategy": "cost_quality_ratio"
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "base_url": "https://api.anthropic.com",
+      "env_key": "ANTHROPIC_API_KEY",
+      "status": "healthy"
+    },
+    "openai": {
+      "base_url": "https://api.openai.com/v1",
+      "env_key": "OPENAI_API_KEY",
+      "status": "healthy"
+    },
+    "google": {
+      "base_url": "https://generativelanguage.googleapis.com",
+      "env_key": "GOOGLE_API_KEY",
+      "status": "healthy"
+    },
+    "groq": {
+      "base_url": "https://api.groq.com/openai/v1",
+      "env_key": "GROQ_API_KEY",
+      "status": "healthy",
+      "openai_compatible": true
+    },
+    "xai": {
+      "base_url": "https://api.x.ai/v1",
+      "env_key": "XAI_API_KEY",
+      "status": "healthy",
+      "openai_compatible": true
+    }
+  },
+  "provider_tiers": {
+    "anthropic": {
+      "tiers": [
+        {"tier": 1, "model": "claude-opus-4-6", "cost_rank": 5, "capability": "highest"},
+        {"tier": 2, "model": "claude-sonnet-4-5-20250929", "cost_rank": 3, "capability": "high"},
+        {"tier": 3, "model": "claude-haiku-4-5-20251001", "cost_rank": 1, "capability": "medium"}
+      ]
+    },
+    "openai": {
+      "tiers": [
+        {"tier": 1, "model": "gpt-5.2", "cost_rank": 3, "capability": "highest"},
+        {"tier": 2, "model": "gpt-4o", "cost_rank": 2, "capability": "high"}
+      ]
+    },
+    "groq": {
+      "tiers": [
+        {"tier": 1, "model": "llama-3.3-70b-versatile", "cost_rank": 2, "capability": "high"},
+        {"tier": 2, "model": "llama-3.1-8b-instant", "cost_rank": 1, "capability": "medium"}
+      ]
+    },
+    "google": {
+      "tiers": [
+        {"tier": 1, "model": "gemini-3-pro-preview", "cost_rank": 3, "capability": "highest"},
+        {"tier": 2, "model": "gemini-3-pro-image-preview", "cost_rank": 2, "capability": "high"},
+        {"tier": 3, "model": "gemini-3-flash-preview", "cost_rank": 1, "capability": "medium"}
+      ]
+    },
+    "xai": {
+      "tiers": [
+        {"tier": 1, "model": "grok-4-latest", "cost_rank": 3, "capability": "high"},
+        {"tier": 2, "model": "grok-4.1-fast", "cost_rank": 1, "capability": "medium"}
+      ]
+    }
+  },
+  "context_affinity": {
+    "enabled": true,
+    "switch_penalties": {
+      "same_model": 0.0,
+      "same_provider_different_tier": 0.1,
+      "different_provider": 0.3
+    },
+    "context_size_factor": 0.001,
+    "min_context_for_affinity": 1000,
+    "max_penalty": 0.5
+  }
+}
