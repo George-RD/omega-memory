@@ -541,7 +541,7 @@ async def handle_intent_check(arguments: dict) -> dict:
                 if "overlapping_branches" in overlap:
                     lines.append(f"  Branches: {', '.join(overlap['overlapping_branches'])}")
                 if "findings" in overlap:
-                    lines.append(f"  **Already explored:**")
+                    lines.append("  **Already explored:**")
                     for finding in overlap["findings"][-3:]:
                         lines.append(f"    - {finding[:200]}")
 

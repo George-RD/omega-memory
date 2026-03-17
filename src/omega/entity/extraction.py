@@ -13,7 +13,6 @@ import os
 import re
 import threading
 import time
-from typing import Optional
 
 from omega.entity.engine import ENTITY_TYPES, RELATIONSHIP_TYPES
 from omega.llm import llm_complete
