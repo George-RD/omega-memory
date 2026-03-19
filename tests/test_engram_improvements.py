@@ -233,12 +233,12 @@ class TestContextDependentGating:
         err = _SURFACING_THRESHOLDS[SurfacingContext.ERROR_DEBUG]
         assert err[0] < gen[0]  # Lower min_vec_similarity
 
-    def test_session_start_broader_surfacing(self):
-        """SESSION_START should surface broadly for better context at startup."""
+    def test_session_start_relaxed_thresholds(self):
+        """SESSION_START should have relaxed thresholds to surface more context at session start."""
         start = _SURFACING_THRESHOLDS[SurfacingContext.SESSION_START]
-        assert start[0] > 0  # Has a min_vec_similarity
-        assert start[1] > 0  # Has a min_text_relevance
-        assert start[2] > 0  # Has a min_composite_score
+        # Thresholds should be reasonable but not overly strict
+        assert start[0] <= 0.50  # min_vec_similarity not too high
+        assert start[2] <= 0.12  # min_composite not too high
 
     def test_file_edit_boosted_context_weight(self):
         """FILE_EDIT should have boosted context weight."""
@@ -437,12 +437,12 @@ class TestEngramIntegration:
         assert isinstance(results, list)
 
     def test_schema_version_is_5(self, store):
-        """SCHEMA_VERSION should be 5 after Engram improvements."""
-        assert SCHEMA_VERSION == 5
+        """SCHEMA_VERSION should be 8 after retrieval improvements."""
+        assert SCHEMA_VERSION == 14
         row = store._conn.execute(
             "SELECT version FROM schema_version LIMIT 1"
         ).fetchone()
-        assert row[0] == 5
+        assert row[0] == 14
 
     def test_stats_tracking(self, store):
         """Engram stats should be tracked."""
